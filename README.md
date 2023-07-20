@@ -1,4 +1,4 @@
-# Real-time multi-object, segmentation and pose tracking using Yolov8 | Yolo-NAS | YOLOX with DeepOCSORT and LightMBN
+# The use of artificial intelligence and deep neural networks for the multi-camera tracking and detection system in risky sections of traffic
 
 
 <div align="center">
