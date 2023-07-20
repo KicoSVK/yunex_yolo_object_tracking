@@ -3,7 +3,7 @@
 
 <div align="center">
   <p>
-  <img src="assets/images/track_all_seg_1280_025conf.gif" width="400"/>
+  <img src="assets/images/vlcsnap-2023-07-20-12h31m14s057.png" width="450"/>
   </p>
   <br>
   <div>
