@@ -1,0 +1,1 @@
+python main.py --device 0 --batch 1 --source streams.txt --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt --half

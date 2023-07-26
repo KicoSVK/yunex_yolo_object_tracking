@@ -1,0 +1,1 @@
+python main.py --device 0 --source F:\Yunex_dataset_2023\xMiladyHorakove\test.mp4 --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt --half
