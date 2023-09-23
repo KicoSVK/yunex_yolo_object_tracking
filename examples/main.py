@@ -2,12 +2,20 @@
 
 import argparse
 from pathlib import Path
+import sys
+import subprocess
+import threading
+import logging
 
 import cv2
 import torch
 import numpy
 from timeit import default_timer as timer
 import time
+import random
+import math
+
+import calibrations_functions
 
 from boxmot.tracker_zoo import create_tracker
 from boxmot.utils import ROOT, WEIGHTS
@@ -30,6 +38,161 @@ from utils import write_MOT_results
 
 from boxmot.utils import EXAMPLES
 
+class CameraData:
+    def __init__(self):
+        self.img = None
+        self.camera_idx = 0
+        self.window_name = ""
+        self.win_pos = None
+        self.H = None
+        self.K = None
+        self.D = None
+        self.P = None
+
+class cameraParams:
+    def __init__(self, H=None, K=None, D=None, P=None):
+        self.H = H if H is not None else cv2.Mat()
+        self.K = K if K is not None else cv2.Mat()
+        self.D = D if D is not None else cv2.Mat()
+        self.P = P if P is not None else cv2.Mat()
+
+# global camera reference data
+cam_ref_win_name = "cam_ref"
+cd_ref = CameraData()
+img_ref = None
+
+def onMouse(event, x, y, flags, param):
+    if event == cv2.EVENT_LBUTTONDOWN:
+        cd = param
+
+        point = (x, y)
+        camera_id = cd.camera_idx
+
+        # draw actual click point to image
+        cv2.circle(cd.img, point, 2, (0, 0, 255), 2)
+
+        # compute point in reference image 
+        point_to_ref = calibrations_functions.getPointInRefPlane(point, cd.H)
+        #print(cd.H)
+
+        # draw actual click point projected to reference image
+        cv2.circle(cd_ref.img, point_to_ref, 2, (0, 0, 255), 2)
+
+        # compute real world point coordinates and print it to terminal
+        xyz_vec = calibrations_functions.getPositionXYZ(cd.P, cd_ref.P, point, point_to_ref)
+
+        for xyz in xyz_vec:
+            print(f"Point in real world: {xyz} m.")
+
+def computePointInReferenceFrame(x, y, param):
+    cd = param
+
+    point = (x, y)
+    camera_id = cd.camera_idx
+
+    # compute point in reference image 
+    point_to_ref = calibrations_functions.getPointInRefPlane(point, cd.H)
+    #print(cd.H)
+
+    return point_to_ref
+
+class Rect():
+    def __init__(self, x, y, width, height):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
+    def __init__(self, x, y, width, height):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
+    def contains(self, point_x, point_y):
+        if self.x <= point_x <= self.x + self.width and self.y <= point_y <= self.y + self.height:
+            return True
+        else:
+            return False
+
+class DetectedObject:
+    def __init__(self, id, className, x, y, width, height, detectedTime, realWorldPosition):
+        self.id = id
+        self.className = className
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.ttl = 28
+        self.objectTrajectory = []
+        self.objectTrajectory.append((x, y))
+        self.centerX = x + (width/2)
+        self.centerY = y + (height/2)
+        self.detectedTime = detectedTime
+        self.realWorldPosition = realWorldPosition
+        self.speed = 0
+
+        self.red = random.randrange(0, 255)
+        self.green = random.randrange(0, 255)
+        self.blue = random.randrange(0, 255)
+
+    def draw(self, image):
+            cv2.rectangle(image, (self.x, self.y), (self.x + self.width, self.y + self.height), (0, 255, 0), 2)
+
+    def setRect(self, x, y, width, height):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
+    def getRect(self):
+        return (self.x, self.y, self.width, self.height)
+
+    def getRectCenter(self):
+        return (self.centerX, self.centerY)
+
+    def getClassName(self):
+        return self.className
+
+    def getId(self):
+        return self.id
+
+    def getDetectedTime(self):
+        return self.detectedTime
+
+    def getRealWorldPosition(self):
+        return self.realWorldPosition
+
+    def setSpeed(self, speed):
+        self.speed = speed
+
+    def getSpeed(self):
+        #self.speed = random.uniform(25.1, 29.9)
+        #return (self.speed/10)/4
+        return 0
+
+    def decreaseTTL(self):
+        self.ttl = self.ttl - 1
+
+    def resetTTL(self):
+        self.ttl = 28
+
+    def getTTL(self):
+        return self.ttl
+
+    def updateObject(self, className, x, y, detectedTime, realWorldPosition):
+        self.className = className
+        self.x = x
+        self.y = y
+        self.centerX = x + (self.width/2)
+        self.centerY = y + (self.height/2)
+        self.objectTrajectory.append((self.centerX, self.centerY))
+        self.detectedTime = detectedTime
+        self.realWorldPosition = realWorldPosition
+
+    def getObjectTrajectory(self):
+        return self.objectTrajectory
+
 
 def on_predict_start(predictor):
     predictor.trackers = []
@@ -39,7 +202,7 @@ def on_predict_start(predictor):
         'boxmot' /\
         'configs' /\
         (opt.tracking_method + '.yaml')
-    for i in range(predictor.dataset.bs):
+    for iii in range(predictor.dataset.bs):
         tracker = create_tracker(
             predictor.args.tracking_method,
             predictor.args.tracking_config,
@@ -50,13 +213,75 @@ def on_predict_start(predictor):
         )
         predictor.trackers.append(tracker)
 
+def printHelp():
+    print("aaaaaa")
+    #print("python main.py --device 0 --source F:\Yunex_dataset_2023\xMiladyHorakove\test.mp4 --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt --half")
 
 @torch.no_grad()
-def run(args):
+def runProcessing(args):
+
+    cam_params_file_name = "cameraParams/crossroadX_cameras_params.xml"
+
+    cd_1 = CameraData()
+    cd_2 = CameraData()
+    cd_3 = CameraData()
+    cd_4 = CameraData()
+    cd_vec = []
+
+    # load imgs, idxs etc...
+    cd_ref.camera_idx = 0
+    cd_ref.img = cv2.imread("cameraViews/crossroadX_birdView.png")
+    cd_ref.window_name = cam_ref_win_name
+    cd_ref.win_pos = (500, 500)
+    cd_vec.append(cd_ref)
+
+    cd_1.camera_idx = 1
+    cd_1.img = cv2.imread("cameraViews/crossroadX_cam_01.png")
+    cd_1.window_name = "cam_1"
+    cd_1.win_pos = (0, 0)
+    cd_vec.append(cd_1)
+
+    cd_2.camera_idx = 2
+    cd_2.img = cv2.imread("cameraViews/crossroadX_cam_02.png")
+    cd_2.window_name = "cam_2"
+    cd_2.win_pos = (0, 0)
+    cd_vec.append(cd_2)
+
+    # PERSPECTIVE TO PLANE
+    H_vec, K_vec, D_vec, P_vec = [], [], [], []
+
+    # read params from files
+    fs = cv2.FileStorage(cam_params_file_name, cv2.FILE_STORAGE_READ)
+    H_node = fs.getNode("H_vec")
+    K_node = fs.getNode("K_vec")
+    D_node = fs.getNode("D_vec")
+    P_node = fs.getNode("P_vec")
+
+    for vectorIndex in range(H_node.size()):
+        H_vec.append(H_node.at(vectorIndex).mat())
+        K_vec.append(K_node.at(vectorIndex).mat())
+        D_vec.append(D_node.at(vectorIndex).mat())
+        P_vec.append(P_node.at(vectorIndex).mat())
+
+    fs.release()
+
+    # initialization through all cameras
+    for j in range(len(cd_vec)):
+        cd_vec[j].H = H_vec[j]
+        cd_vec[j].K = K_vec[j]
+        cd_vec[j].D = D_vec[j]
+        cd_vec[j].P = P_vec[j]
+
+    birdViewPath = "D:\\DNN\\\yunex_yolo_object_tracking\\examples\\cameraViews\\crossroadX_birdView.png"
+    birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
 
     model = YOLO(args['yolo_model'] if 'v8' in str(args['yolo_model']) else 'yolov8n')
     overrides = model.overrides.copy()
     model.predictor = TASK_MAP[model.task][3](overrides=overrides, _callbacks=model.callbacks)
+
+    # detected objects
+    allowedDetectedObjects = ["person", "car", "truck", "bus", "tram/train", "bicycle", "motorcycle"]
+    detectedObjects = []
 
     # extract task predictor
     predictor = model.predictor
@@ -98,6 +323,11 @@ def run(args):
     predictor.run_callbacks('on_predict_start')
 
     yolo_strategy = get_yolo_inferer(args['yolo_model'])
+    #yolo_strategy = yolo_strategy(
+    #    model=model.predictor.model if 'v8' in str(args['yolo_model']) else args['yolo_model'],
+    #    device=predictor.device,
+    #    args=predictor.args
+    #)
     yolo_strategy = yolo_strategy(
         model=model.predictor.model if 'v8' in str(args['yolo_model']) else args['yolo_model'],
         device=predictor.device,
@@ -109,11 +339,21 @@ def run(args):
     timePerFrameArray = numpy.array([], dtype=float)
 
     for frame_idx, batch in enumerate(predictor.dataset):
+        #print(f'frame index: {frame_idx}')
+        #print(f'batch: {batch}')
+
         # Start timer
         start = timer()
         predictor.run_callbacks('on_predict_batch_start')
         predictor.batch = batch
         path, im0s, vid_cap, s = batch
+
+        # Temp vector of detected objects
+        # Detected objects in currect picture frame from all perspective
+        tempDetectedObjectsUnsorted = []
+
+        # All sorted/paired detected objects
+        tempDetectedObjectsSorted = []
 
         n = len(im0s)
         predictor.results = [None] * n
@@ -134,15 +374,18 @@ def run(args):
         # Visualize, save, write results
         n = len(im0s)
 
+        #print(f'Batch: {batch}')
+        #print(f'n: {n}')
+
         # !!!
         # Toto iteruje cez viacero obrazkov, respektive v pripade kedy do modelu NN davame viacero vstupov na raz (viac bacthov)
         # !!!
         for i in range(n):
-
             if predictor.dataset.source_type.tensor:  # skip write, show and plot operations if input is raw tensor
                 continue
             p, im0 = path[i], im0s[i].copy()
             p = Path(p)
+            #print(f'Index: {i}, Path: {p}')
 
             with predictor.profilers[3]:
                 # get raw bboxes tensor
@@ -160,14 +403,12 @@ def run(args):
             model.filter_results(i, predictor)
             # overwrite bbox results with tracker predictions
             model.overwrite_results(i, im0.shape[:2], predictor)
-
-            #cv2.imshow("im0", im0)
             
             # https://stackoverflow.com/questions/75324341/yolov8-get-predicted-bounding-box
             isMultiCameraTracking = True
             if isMultiCameraTracking:
                 #results = model(source=..., stream=True)  # generator of Results objects
-                results = predictor.results
+                results = predictor.results[i]
                 for r in results:
                     boxes = r.boxes  # Boxes object for bbox outputs
                     #masks = r.masks  # Masks object for segment masks outputs
@@ -177,6 +418,10 @@ def run(args):
                         # Bbox class name                        
                         bbBoxNameIndex = box.cls
                         bbBoxName = r.names[int(bbBoxNameIndex)]
+
+                        # Checking a allowedDetectedObjects (filter)
+                        if not bbBoxName in allowedDetectedObjects:
+                            continue
 
                         b = box.xyxy[0]  # get box coordinates in (top, left, bottom, right) format
                         bboxStartPoint = (int(b[0]), int(b[1]))
@@ -219,9 +464,155 @@ def run(args):
                         if box.id is not None:
                             im0 = cv2.putText(im0, str(int(box.id[0])), org, font, fontScale, color, thickness, cv2.LINE_AA)
 
+                        # b[0] -> x1
+                        # b[1] -> y1
+                        # b[2] -> x2
+                        # b[3] -> y2
+                        bboxCenterPointX = int(b[0]) + int((int(b[2]) - int(b[0]))/2)
+                        bboxCenterPointY = int(b[1]) + int((int(b[3]) - int(b[1]))/2)
+                        # Set perspective offset in y direction
+                        bboxCenterPointY = bboxCenterPointY + int((int(b[3]) - int(b[1])) / 3)
 
-            #    cv2.imshow("im0", im0)
+                        
+                        bboxWidth = int(b[2]) - int(b[0])
+                        bboxHeight = int(b[3]) - int(b[1])
 
+                        
+                        # Draw center of detected object to camera perspective
+                        cv2.circle(im0, (bboxCenterPointX, bboxCenterPointY), 2, (0, 0, 255), 2)
+
+                        # multi camera, detected object pairing
+                        # get x,y position in (digital twin/bird view) image frame
+                        point_to_ref = calibrations_functions.getPointInRefPlane((bboxCenterPointX, bboxCenterPointY), cd_vec[i+1].H)
+
+                        if (i==0):
+                            cv2.circle(birdViewFrame, point_to_ref, 2, (255, 0, 0), 2)
+                            #cv2.drawMarker(birdViewFrame, point_to_ref, color=(255, 0, 0), markerType=cv2.MARKER_CROSS, thickness=2)
+                        elif (i==1):
+                            cv2.circle(birdViewFrame, point_to_ref, 2, (0, 255, 0), 2)
+                            #cv2.drawMarker(birdViewFrame, point_to_ref, color=(0, 255, 0), markerType=cv2.MARKER_CROSS, thickness=2)
+                        #elif (i==2):
+                        #    cv2.circle(birdViewFrame, point_to_ref, 2, (0, 0, 255), 2)
+                        #elif (i==3):
+                        #    cv2.circle(birdViewFrame, point_to_ref, 2, (255, 255, 0), 2)
+
+                        # Current detected object
+                        tempDetectedObject = DetectedObject(len(detectedObjects), bbBoxName, point_to_ref[0], point_to_ref[1], 25, 25, 0.0, (0, 0))
+                        
+                        searchingAreaOffsetX = 55
+                        searchingAreaOffsetY = 55
+
+                        # Check, if it iterate over last video/stream source
+                        # Prebehne vsetky iteracie, zdroj po zdroji... Az na poslednej iteracii, tam iteruje posledny zdroj a rovno paruje s predchazdajucimi
+                        if i == (n-1):
+                            centerX, centerY = tempDetectedObject.getRectCenter()
+                            #objCenterPoint = (centerX, centerY + (height * 0.5))
+                            #cv2.circle(birdViewFrame, (int(centerX), int(centerY)), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+                            #cv2.rectangle(birdViewFrame, (int(centerX-64), int(centerY-32)), (int(centerX+64), int(centerY+32)), (tempDetectedObject.blue, tempDetectedObject.green, tempDetectedObject.red), 4)
+
+                            if(len(tempDetectedObjectsUnsorted) > 0 and tempDetectedObject is not None):
+                                
+                                # Temp store for all similar detected objects, array of indexes
+                                similarDetectedObjectIndexes = []
+
+                                # Temp store for all similar detected objects, array of positions
+                                #similarDetectedObjectCenterPositions = []
+
+                                for index, forDetectedObject in enumerate(tempDetectedObjectsUnsorted):
+                                    forDetectedObjectCenterX, forDetectedObjectCenterY = forDetectedObject.getRectCenter()
+                                    # Rect(x, y, width, height)
+                                    dObjectRect = Rect(forDetectedObjectCenterX-84, forDetectedObjectCenterY-48, 168, 96)
+                                    if dObjectRect.contains(centerX, centerY):
+                                        similarDetectedObjectIndexes.append(index)
+
+                                if len(similarDetectedObjectIndexes) > 0:
+                                    similarDetectedObjectIndexesSorted = sorted(similarDetectedObjectIndexes, reverse=True)
+                                    similarDetectedObjectPositionsCenterX = []
+                                    similarDetectedObjectPositionsCenterY = []
+                                    for index in similarDetectedObjectIndexesSorted:
+                                        similarDetObCenterX, similarDetObCenterY = tempDetectedObjectsUnsorted[index].getRectCenter()
+                                        similarDetectedObjectPositionsCenterX.append(similarDetObCenterX)
+                                        similarDetectedObjectPositionsCenterY.append(similarDetObCenterY)
+                                        del tempDetectedObjectsUnsorted[index]
+
+                                    similarDetectedObjectPositionsCenterX.append(centerX)
+                                    similarDetectedObjectPositionsCenterY.append(centerY)
+                                    averageDetObPositionsCenterX = int(sum(similarDetectedObjectPositionsCenterX) / len(similarDetectedObjectPositionsCenterX))
+                                    averageDetObPositionsCenterY = int(sum(similarDetectedObjectPositionsCenterY) / len(similarDetectedObjectPositionsCenterY))
+
+                                    resultingDetectedObject = DetectedObject(len(detectedObjects), bbBoxName, averageDetObPositionsCenterX, averageDetObPositionsCenterY, 25, 25, 0.0, (0, 0))
+
+                                    # Teraz len priradenie s predchadzajucimi detekciami, to znamena aktualizacia detekovanych objektov novymi
+                                    if len(detectedObjects) > 0:
+                                        nearestDistance = 99999
+                                        nearestDetectedObjectIndex = -1
+                                        hasSimilarObjectFound = False
+
+                                        for index, forDetectedObject in enumerate(detectedObjects):
+                                            forDetectedObjectCenterX, forDetectedObjectCenterY = forDetectedObject.getRectCenter()
+                                            # Rect(x, y, width, height)
+                                            dObjectRect = Rect(forDetectedObjectCenterX-84, forDetectedObjectCenterY-48, 168, 96)
+                                            resultingDetectedObjectCenterX = resultingDetectedObject.getRectCenter()[0]
+                                            resultingDetectedObjectCenterY = resultingDetectedObject.getRectCenter()[1]
+
+                                            if dObjectRect.contains(resultingDetectedObjectCenterX, resultingDetectedObjectCenterY):
+                                                # x difference
+                                                xDifference = abs(forDetectedObject.getObjectTrajectory()[len(forDetectedObject.getObjectTrajectory())-1][0] - resultingDetectedObjectCenterX)
+                                                # x difference
+                                                yDifference = abs(forDetectedObject.getObjectTrajectory()[len(forDetectedObject.getObjectTrajectory())-1][1] - resultingDetectedObjectCenterY)
+                                                # Distance
+                                                distance = math.sqrt(math.pow(xDifference,2) + math.pow(yDifference,2))
+                                                #
+                                                if distance < nearestDistance:
+                                                    nearestDetectedObjectIndex = index
+                                                
+                                                hasSimilarObjectFound = True
+                            
+                                        if hasSimilarObjectFound == True:
+                                            detectedObjects[nearestDetectedObjectIndex].updateObject(bbBoxName, resultingDetectedObjectCenterX, resultingDetectedObjectCenterY, 0.0, (0, 0))                               
+                                            detectedObjects[nearestDetectedObjectIndex].resetTTL()
+                                        else:
+                                            detectedObjects.append(resultingDetectedObject)                                          
+                                    else:
+                                        detectedObjects.append(resultingDetectedObject)
+                                else:
+                                    # Opat len priradenie s predchadzajucimi detekciami, to znamena aktualizacia detekovanych objektov novymi
+                                    if len(detectedObjects) > 0:
+                                        nearestDistance = 99999
+                                        nearestDetectedObjectIndex = -1
+                                        hasSimilarObjectFound = False
+
+                                        for index, forDetectedObject in enumerate(detectedObjects):
+                                            forDetectedObjectCenterX, forDetectedObjectCenterY = forDetectedObject.getRectCenter()
+                                            # Rect(x, y, width, height)
+                                            dObjectRect = Rect(forDetectedObjectCenterX-84, forDetectedObjectCenterY-48, 168, 96)
+                                            tempDetectedObjectCenterX = tempDetectedObject.getRectCenter()[0]
+                                            tempDetectedObjectCenterY = tempDetectedObject.getRectCenter()[1]
+
+                                            if dObjectRect.contains(tempDetectedObjectCenterX, tempDetectedObjectCenterY):
+                                                # x difference
+                                                xDifference = abs(forDetectedObject.getObjectTrajectory()[len(forDetectedObject.getObjectTrajectory())-1][0] - tempDetectedObjectCenterX)
+                                                # x difference
+                                                yDifference = abs(forDetectedObject.getObjectTrajectory()[len(forDetectedObject.getObjectTrajectory())-1][1] - tempDetectedObjectCenterY)
+                                                # Distance
+                                                distance = math.sqrt(math.pow(xDifference,2) + math.pow(yDifference,2))
+                                                #
+                                                if distance < nearestDistance:
+                                                    nearestDetectedObjectIndex = index
+                                                
+                                                hasSimilarObjectFound = True
+                            
+                                        if hasSimilarObjectFound == True:
+                                            detectedObjects[nearestDetectedObjectIndex].updateObject(bbBoxName, tempDetectedObjectCenterX, tempDetectedObjectCenterY, 0.0, (0, 0))                               
+                                            detectedObjects[nearestDetectedObjectIndex].resetTTL()
+                                        else:
+                                            detectedObjects.append(tempDetectedObject)
+                                    else:
+                                        detectedObjects.append(tempDetectedObject)                                                                  
+                        else:
+                            tempDetectedObjectsUnsorted.append(tempDetectedObject)
+
+                                 
             # write inference results to a file or directory
             if (predictor.args.verbose or predictor.args.save or
                predictor.args.save_txt or predictor.args.show or
@@ -288,14 +679,74 @@ def run(args):
             if predictor.args.save and predictor.plotted_img is not None:
                 predictor.save_preds(vid_cap, i, str(predictor.save_dir / p.name))
 
-        predictor.run_callbacks('on_predict_batch_end')
+            isShowImageWithDNNOutputs = True
+            if isShowImageWithDNNOutputs == True:
+                im0FrameForView = cv2.resize(im0, (int(im0.shape[1]/2), int(im0.shape[0]/2)), interpolation = cv2.INTER_AREA)
+                cv2.imshow(f'{p}', im0FrameForView)
+                if cv2.waitKey(1) == ord('q'):
+                    cv2.destroyAllWindows()
+                    exit()
 
-        isShowImageWithDNNOutputs = False
-        if isShowImageWithDNNOutputs == True:
-            cv2.imshow("im0", im0)
-            if cv2.waitKey(1) == ord('q'):
-                cv2.destroyAllWindows()
-                exit()
+
+        ###########################################################
+            canDrawDetectedObjectToBirdView = True
+            if canDrawDetectedObjectToBirdView == True:
+                birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
+                birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
+                for index, forDetectedObject in enumerate(detectedObjects):
+                
+                    forDetectedObject.decreaseTTL()
+                    if forDetectedObject.getTTL() <= 0:
+                        detectedObjects.pop(index)
+                        continue
+                    
+
+                    x, y, width, height = forDetectedObject.getRect()
+                    centerX, centerY = forDetectedObject.getRectCenter()
+                    #objCenterPoint = (centerX, centerY + (height * 0.5))
+                    #cv2.circle(birdViewFrame, (int(centerX), int(centerY)), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+                    cv2.rectangle(birdViewFrame, (int(centerX-42), int(centerY-32)), (int(centerX+42), int(centerY+32)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
+                    cv2.putText(birdViewFrame, forDetectedObject.getClassName(), (int(centerX), int(centerY)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+                    cv2.putText(birdViewFrame, str(forDetectedObject.getId()), (int(centerX), int(centerY+24)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+
+                    speedQ = "{:.2f}".format(forDetectedObject.getSpeed())
+                    #objectSpeedValueString = "{} km/h".format(str(forDetectedObject.getSpeed()))
+                    objectSpeedValueString = "{} km/h".format(str(speedQ))
+                    #cv2.putText(birdViewFrame, objectSpeedValueString, (int(centerX), int(centerY+48)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+
+                    #pointInReferenceFrame = computePointInReferenceFrame(centerX, centerY, cd_vec[1])
+                    #cv2.circle(cd_vec[0].img, pointInReferenceFrame, 2, (0, 0, 255), 2)
+                    #cv2.circle(birdViewFrame, (int(x + (width/2)), int(y + (height/2))), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+                    #cv2.rectangle(birdViewFrame, (int(pointInReferenceFrame[0]-10), int(pointInReferenceFrame[1]-10)), (int(pointInReferenceFrame[0]+10), int(pointInReferenceFrame[1]+10)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 3)
+            
+                    objTrajectory = forDetectedObject.getObjectTrajectory()
+                    for objPoint in objTrajectory:
+                        #pointInReferenceFrame = computePointInReferenceFrame(objPoint[0], objPoint[1], cd_vec[1])
+                        cv2.circle(birdViewFrame, (int(objPoint[0]), int(objPoint[1])), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+
+            #detectedObjects = []
+        ###########################################################
+
+        isShowBirdView = True
+        if isShowBirdView == True:
+            birdViewFrameForView = cv2.resize(birdViewFrame, (int(birdViewFrame.shape[1]/2), int(birdViewFrame.shape[0]/2)), interpolation = cv2.INTER_AREA)
+            cv2.imshow("Birdview", birdViewFrameForView)
+
+        # Wait for a key press and handle it
+        key = cv2.waitKey(1) & 0xFF
+
+        # Exit the loop if 'c' is pressed (ROI selection completed)
+        if key == ord('r'):
+            birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
+            birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
+
+        # Exit the loop if 'q' or Esc is pressed (cancel ROI selection)
+        if key == ord('q') or key == 27:
+            cv2.destroyAllWindows()
+            exit()
+            break
+
+        predictor.run_callbacks('on_predict_batch_end')
 
         if len(timePerFrameArray) > 30:
             timePerFrameArray = numpy.delete(timePerFrameArray, 0)
@@ -311,7 +762,8 @@ def run(args):
         #cv2.putText(im0, "Average FPS: {:.2f}".format(1/((numpy.sum(timePerFrameArray, dtype = numpy.float32))/len(timePerFrameArray))), (12, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (225, 225, 225), 1, cv2.LINE_AA)
 
         # print time (inference-only)
-        if predictor.args.verbose:
+        showInferenceInfo = False
+        if predictor.args.verbose and showInferenceInfo == True:
             s_t = f'YOLO {predictor.profilers[1].dt * 1E3:.1f}ms, TRACKING {predictor.profilers[3].dt * 1E3:.1f}ms'
             LOGGER.info(f'{s}{s_t}')
 
@@ -333,8 +785,9 @@ def run(args):
 
 
 def parse_opt():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--yolo-model', type=Path, default=WEIGHTS / 'yolov8n.pt', help='model.pt path(s)')
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--help', action="help", help="Show this help message and exit")
+    parser.add_argument('--yolo-model', type=Path, default=WEIGHTS / 'best.pt', help='model.pt path(s)')
     parser.add_argument('--reid-model', type=Path, default=WEIGHTS / 'mobilenetv2_x1_4_dukemtmcreid.pt')
     parser.add_argument('--tracking-method', type=str, default='deepocsort',
                         help='deepocsort, botsort, strongsort, ocsort, bytetrack')
@@ -382,12 +835,13 @@ def parse_opt():
 
     opt = parser.parse_args()
     return opt
-
-
-def main(opt):
-    run(vars(opt))
+    
 
 
 if __name__ == "__main__":
     opt = parse_opt()
-    main(opt)
+
+    runProcessing(vars(opt))
+
+    #t1.join()
+    #t2.join()
