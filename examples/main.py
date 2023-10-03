@@ -357,15 +357,26 @@ def runProcessing(args):
 
         n = len(im0s)
         predictor.results = [None] * n
+        tm = cv2.TickMeter()
+        tm.start()
 
         # Preprocess
         with predictor.profilers[0]:
             im = predictor.preprocess(im0s)
+        tm.stop()
+        print("Preprocess: ", tm.getTimeMilli())
+        tm.reset()
 
+        tm.start()
         # Inference
         with predictor.profilers[1]:
             preds = model.inference(im=im)
 
+        tm.stop()
+        print("Inference: ", tm.getTimeMilli())
+        tm.reset()
+
+        tm.start()
         # Postprocess moved to MultiYolo
         with predictor.profilers[2]:
             predictor.results = model.postprocess(path, preds, im, im0s, predictor)
@@ -373,6 +384,9 @@ def runProcessing(args):
 
         # Visualize, save, write results
         n = len(im0s)
+        tm.stop()
+        print("Postprocess: ", tm.getTimeMilli())
+        tm.reset()
 
         #print(f'Batch: {batch}')
         #print(f'n: {n}')
@@ -380,6 +394,7 @@ def runProcessing(args):
         # !!!
         # Toto iteruje cez viacero obrazkov, respektive v pripade kedy do modelu NN davame viacero vstupov na raz (viac bacthov)
         # !!!
+        tm.start()
         for i in range(n):
             if predictor.dataset.source_type.tensor:  # skip write, show and plot operations if input is raw tensor
                 continue
@@ -686,45 +701,47 @@ def runProcessing(args):
                 if cv2.waitKey(1) == ord('q'):
                     cv2.destroyAllWindows()
                     exit()
-
+        tm.stop()
+        print("Tracking: ", tm.getTimeMilli())
+        tm.reset()
 
         ###########################################################
-            canDrawDetectedObjectToBirdView = True
-            if canDrawDetectedObjectToBirdView == True:
-                birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
-                birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
-                for index, forDetectedObject in enumerate(detectedObjects):
+        canDrawDetectedObjectToBirdView = True
+        if canDrawDetectedObjectToBirdView == True:
+            birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
+            birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
+            for index, forDetectedObject in enumerate(detectedObjects):
                 
-                    forDetectedObject.decreaseTTL()
-                    if forDetectedObject.getTTL() <= 0:
-                        detectedObjects.pop(index)
-                        continue
+                forDetectedObject.decreaseTTL()
+                if forDetectedObject.getTTL() <= 0:
+                    detectedObjects.pop(index)
+                    continue
                     
 
-                    x, y, width, height = forDetectedObject.getRect()
-                    centerX, centerY = forDetectedObject.getRectCenter()
-                    #objCenterPoint = (centerX, centerY + (height * 0.5))
-                    #cv2.circle(birdViewFrame, (int(centerX), int(centerY)), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
-                    cv2.rectangle(birdViewFrame, (int(centerX-42), int(centerY-32)), (int(centerX+42), int(centerY+32)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
-                    cv2.putText(birdViewFrame, forDetectedObject.getClassName(), (int(centerX), int(centerY)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
-                    cv2.putText(birdViewFrame, str(forDetectedObject.getId()), (int(centerX), int(centerY+24)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+                x, y, width, height = forDetectedObject.getRect()
+                centerX, centerY = forDetectedObject.getRectCenter()
+                #objCenterPoint = (centerX, centerY + (height * 0.5))
+                #cv2.circle(birdViewFrame, (int(centerX), int(centerY)), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+                cv2.rectangle(birdViewFrame, (int(centerX-42), int(centerY-32)), (int(centerX+42), int(centerY+32)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
+                cv2.putText(birdViewFrame, forDetectedObject.getClassName(), (int(centerX), int(centerY)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+                cv2.putText(birdViewFrame, str(forDetectedObject.getId()), (int(centerX), int(centerY+24)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
 
-                    speedQ = "{:.2f}".format(forDetectedObject.getSpeed())
-                    #objectSpeedValueString = "{} km/h".format(str(forDetectedObject.getSpeed()))
-                    objectSpeedValueString = "{} km/h".format(str(speedQ))
-                    #cv2.putText(birdViewFrame, objectSpeedValueString, (int(centerX), int(centerY+48)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+                speedQ = "{:.2f}".format(forDetectedObject.getSpeed())
+                #objectSpeedValueString = "{} km/h".format(str(forDetectedObject.getSpeed()))
+                objectSpeedValueString = "{} km/h".format(str(speedQ))
+                cv2.putText(birdViewFrame, objectSpeedValueString, (int(centerX), int(centerY+48)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
 
-                    #pointInReferenceFrame = computePointInReferenceFrame(centerX, centerY, cd_vec[1])
-                    #cv2.circle(cd_vec[0].img, pointInReferenceFrame, 2, (0, 0, 255), 2)
-                    #cv2.circle(birdViewFrame, (int(x + (width/2)), int(y + (height/2))), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
-                    #cv2.rectangle(birdViewFrame, (int(pointInReferenceFrame[0]-10), int(pointInReferenceFrame[1]-10)), (int(pointInReferenceFrame[0]+10), int(pointInReferenceFrame[1]+10)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 3)
+                #pointInReferenceFrame = computePointInReferenceFrame(centerX, centerY, cd_vec[1])
+                #cv2.circle(cd_vec[0].img, pointInReferenceFrame, 2, (0, 0, 255), 2)
+                #cv2.circle(birdViewFrame, (int(x + (width/2)), int(y + (height/2))), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+                #cv2.rectangle(birdViewFrame, (int(pointInReferenceFrame[0]-10), int(pointInReferenceFrame[1]-10)), (int(pointInReferenceFrame[0]+10), int(pointInReferenceFrame[1]+10)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 3)
             
-                    objTrajectory = forDetectedObject.getObjectTrajectory()
-                    for objPoint in objTrajectory:
-                        #pointInReferenceFrame = computePointInReferenceFrame(objPoint[0], objPoint[1], cd_vec[1])
-                        cv2.circle(birdViewFrame, (int(objPoint[0]), int(objPoint[1])), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+                objTrajectory = forDetectedObject.getObjectTrajectory()
+                for objPoint in objTrajectory:
+                    #pointInReferenceFrame = computePointInReferenceFrame(objPoint[0], objPoint[1], cd_vec[1])
+                    cv2.circle(birdViewFrame, (int(objPoint[0]), int(objPoint[1])), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
 
-            #detectedObjects = []
+        #detectedObjects = []
         ###########################################################
 
         isShowBirdView = True
