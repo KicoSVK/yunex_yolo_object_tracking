@@ -18,8 +18,6 @@ from timeit import default_timer as timer
 import time
 import random
 import math
-from datetime import datetime
-import json
 
 import calibrations_functions
 
@@ -45,91 +43,21 @@ from utils import write_MOT_results
 from boxmot.utils import EXAMPLES
 
 # Websocket communication
-# Flag to signal the thread to stop
-iterateee = 0
 globalFrame = None
-
-detectedObjectIdInCounter = []
-countCar = 0
-countBus = 0
-countTruck = 0
-countTrainTram = 0
-
-killAsyncThreadForChar = False
-stop_websocket_thread = False
-
-detectedObjects = [1]
-
-ObjectListJson = {
-          "AnalyticsId": 0,
-          "EvaluationTimestamp": str(int(time.time())*1000),
-          "Failure": False,
-          "FailureState": "None",
-          "Objects": [],
-          "supportedClassesForCounter": ["Car", "Bus", "Truck", "Train/Tram"],
-          "totalObjectsCountForCounter": [],
-          "Part": 1,
-          "TotalParts": 1
-        }
-
-async def sendDataToHorizontalChart(websocket, path):
-    #global stop_websocket_thread
-    while not stop_websocket_thread:
-        #data = {
-        #    "supportedClassesForCounter": ["Car", "Bus", "Truck", "Train/Trammm"],
-        #    "totalObjectsCountForCounter": [countCar, countBus, countTruck, countTrainTram]
-        #}
-        ObjectListJson["totalObjectsCountForCounter"] = [countCar, countBus, countTruck, countTrainTram]
-
-        now = datetime.now()
-        #current_time = now.strftime("async thread: %H:%M:%S")
-        current_time = now.strftime("%H:%M:%S")
-        #print(ObjectListJson)
-        print("[{}] Sending a socket/json".format(current_time))
-        #print(stop_websocket_thread)
-
-        await websocket.send(json.dumps(ObjectListJson))
-        await asyncio.sleep(1)  # Send updates every second
-    exit()
-
-def runHorizontalChart_thread():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    start_server = websockets.serve(sendDataToHorizontalChart, "127.0.0.1", 8051)
-    loop.run_until_complete(start_server)
-    loop.run_forever()
-
-################################################################
-################################################################
-
-async def sendDataToVideoStreamViewer(websocket, path):
-    #global stop_websocket_thread
-    while not stop_websocket_thread:
+async def send_video_stream(websocket, path):
+    while True:
         global globalFrame
         frame = globalFrame
-
-        if frame is None:
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
         # Process the frame as needed here
         _, image_data = cv2.imencode('.jpg', frame)
         image_data_base64 = base64.b64encode(image_data.tobytes()).decode('utf-8')
-        
-        now = datetime.now()
-        #current_time = now.strftime("async thread: %H:%M:%S")
-        current_time = now.strftime("%H:%M:%S")
-        print("[{}] Sending a socket/json".format(current_time))
-        #print(stop_websocket_thread)
-
         await websocket.send(image_data_base64)
-        # Wait for 5 seconds before sending the next data
-        await asyncio.sleep(1) 
-    exit()
 
-def runVideoStream_thread():
+def video_stream_thread():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    start_server = websockets.serve(sendDataToVideoStreamViewer, "127.0.0.1", 8050)
+    start_server = websockets.serve(send_video_stream, "127.0.0.1", 12345)
     loop.run_until_complete(start_server)
     loop.run_forever()
 
@@ -203,10 +131,10 @@ pixelToGpsHomography = None
 
 # Define a function to convert pixel coordinates to GPS coordinates
 def pixel_to_gps(x, y):
-    #print(x, y)
+    print(x, y)
     pixel_point = np.array([[x, y, 1]])
     global pixelToGpsHomography
-    #print(pixelToGpsHomography)
+    print(pixelToGpsHomography)
     gps_point = np.dot(pixelToGpsHomography, pixel_point.T)
     gps_point /= gps_point[2]
     return gps_point[0, 0], gps_point[1, 0]
@@ -886,19 +814,15 @@ def runProcessing(args):
             isShowImageWithDNNOutputs = True
             if isShowImageWithDNNOutputs == True:
                 im0FrameForView = cv2.resize(im0, (int(im0.shape[1]/2), int(im0.shape[0]/2)), interpolation = cv2.INTER_AREA)
-                #kiac
-                #Zobrazenie perspektivy kamier
-                #Zobrazenie kamier
-                #cv2.imshow(f'{p}', im0FrameForView)
-                #if cv2.waitKey(1) == ord('q'):
-                #    cv2.destroyAllWindows()
-                #    exit()
+                cv2.imshow(f'{p}', im0FrameForView)
+                if cv2.waitKey(1) == ord('q'):
+                    cv2.destroyAllWindows()
+                    exit()
         ### ### ###kiactm.stop()
         ### ### ###kiacprint("Tracking: ", tm.getTimeMilli())
         ### ### ###kiactm.reset()
 
         ###########################################################
-        ObjectListJson["Objects"] = []
         canDrawDetectedObjectToBirdView = True
         if canDrawDetectedObjectToBirdView == True:
             birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
@@ -921,28 +845,11 @@ def runProcessing(args):
                 #currentObjectSpeed = "{:.2f}".format(forDetectedObject.getSpeed())
                 currentObjectSpeed = forDetectedObject.getSpeed()
                 #objectSpeedValueString = "{} km/h".format(str(forDetectedObject.getSpeed()))
-                objectSpeedValueString = "NaN km/h"
                 if currentObjectSpeed <= 2.5:
                     objectSpeedValueString = "{:.2f} km/h".format(0)
                 else:
                     objectSpeedValueString = "{:.2f} km/h".format(forDetectedObject.getSpeed())
                 cv2.putText(birdViewFrame, objectSpeedValueString, (int(centerX), int(centerY+48)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
-                
-                # Detected object counting
-                if not forDetectedObject.getId() in detectedObjectIdInCounter:
-                    detectedObjectIdInCounter.append(forDetectedObject.getId())                 
-                    if forDetectedObject.getClassName() == "car":
-                        global countCar
-                        countCar = countCar + 1
-                    if forDetectedObject.getClassName() == "bus":
-                        global countBus
-                        countBus = countBus + 1
-                    if forDetectedObject.getClassName() == "truck":
-                        global countTruck
-                        countTruck = countTruck + 1
-                    if forDetectedObject.getClassName() == "train/tram":
-                        global countTrainTram
-                        countTrainTram = countTrainTram + 1
 
                 #pointInReferenceFrame = computePointInReferenceFrame(centerX, centerY, cd_vec[1])
                 #cv2.circle(cd_vec[0].img, pointInReferenceFrame, 2, (0, 0, 255), 2)
@@ -953,36 +860,6 @@ def runProcessing(args):
                 for objPoint in objTrajectory:
                     #pointInReferenceFrame = computePointInReferenceFrame(objPoint[0], objPoint[1], cd_vec[1])
                     cv2.circle(birdViewFrame, (int(objPoint[0]), int(objPoint[1])), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
-
-                ###########################################################
-                ######################TESTTTTTT############################
-                ###########################################################
-                now = datetime.now()
-                current_time = now.strftime("%H:%M:%S")
-                #print(current_time)
-                #print("[{}] main".format(current_time))
-
-                #print(ObjectListJson)
-                objectJson = {
-                "Category": str(forDetectedObject.getClassName()),
-                "Color": None,
-                "Id": str(forDetectedObject.getId()),
-                    "LastState": {
-                        "BoundingBox": [None, None, None, None],
-                        "MapAcceleration": None,
-                        "MapPosition": [None, None],
-                        "MapSpeed": objectSpeedValueString,
-                        "MapSpeedAngle": None,
-                        "SensorPosition": [None, None],
-                        "Timestamp": str(int(time.time())*1000),
-                        "WGS84Position": [str(forDetectedObject.getGpsPosition()[0]), str(forDetectedObject.getGpsPosition()[1])]
-                    }
-                }
-                ObjectListJson["Objects"].append(objectJson)
-
-                ###########################################################
-                ######################TESTTTTTT############################
-                ###########################################################
 
             global globalFrame
             globalFrame = birdViewFrame
@@ -996,6 +873,7 @@ def runProcessing(args):
 
         # Wait for a key press and handle it
         key = cv2.waitKey(1) & 0xFF
+
         # Exit the loop if 'c' is pressed (ROI selection completed)
         if key == ord('r'):
             birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
@@ -1004,8 +882,7 @@ def runProcessing(args):
         # Exit the loop if 'q' or Esc is pressed (cancel ROI selection)
         if key == ord('q') or key == 27:
             cv2.destroyAllWindows()
-            stop_websocket_thread = True
-            #exit()
+            exit()
             break
 
         predictor.run_callbacks('on_predict_batch_end')
@@ -1016,9 +893,9 @@ def runProcessing(args):
         else:   
             timePerFrameArray = numpy.append (timePerFrameArray, (timer()-start))
 
-        #kiac#print("Current FPS: {:.2f}".format(1/(timer()-start)))
-        #kiac#print("Average FPS: {:.2f}".format(1/((numpy.sum(timePerFrameArray, dtype = numpy.float32))/len(timePerFrameArray))))
-        #kiac#print("########################################################")
+        print("Current FPS: {:.2f}".format(1/(timer()-start)))
+        print("Average FPS: {:.2f}".format(1/((numpy.sum(timePerFrameArray, dtype = numpy.float32))/len(timePerFrameArray))))
+        print("########################################################")
 
         #cv2.putText(im0, "Current FPS: {:.2f}".format(1/(timer()-start)), (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (225, 225, 225), 1, cv2.LINE_AA)
         #cv2.putText(im0, "Average FPS: {:.2f}".format(1/((numpy.sum(timePerFrameArray, dtype = numpy.float32))/len(timePerFrameArray))), (12, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (225, 225, 225), 1, cv2.LINE_AA)
@@ -1102,16 +979,9 @@ def parse_opt():
 
 if __name__ == "__main__":
     opt = parse_opt()
-    # Create a thread for WebSocket communication
-    #websocket_thread = threading.Thread(target=startWebsocket_videoStreamCommunication, args=(server_uri,))
-    #websocket_thread.start()
-    videoStream_thread = threading.Thread(target=runVideoStream_thread)
-    videoStream_thread.start()
-
-    horizontalChart_thread = threading.Thread(target=runHorizontalChart_thread)
-    horizontalChart_thread.start()
-
+    video_thread = threading.Thread(target=video_stream_thread)
+    video_thread.start()
     runProcessing(vars(opt))
-    #websocket_thread.join()  # Wait for the thread to finish
+
     #t1.join()
     #t2.join()

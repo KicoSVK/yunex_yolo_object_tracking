@@ -7,6 +7,3 @@ python mainObjectDetectionAndTrackingOnly.py --device 0 --source list1.streams -
 
 # For multi camera object detection and tracking
 python main.py --device 0 --source yunex.streams --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt
-
-# Stream a mp4 video
-"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe" input.mp4 --sout "#transcode{vcodec=h264,vb=800,acodec=mpga,ab=128,channels=2,samplerate=44100,scodec=none}:http{mux=ts,dst=:8080/}" --no-sout-all --sout-keep
