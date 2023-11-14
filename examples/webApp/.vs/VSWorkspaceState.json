@@ -1,0 +1,15 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\yunex_app",
+    "\\yunex_app\\static",
+    "\\yunex_app\\static\\css",
+    "\\yunex_app\\static\\images",
+    "\\yunex_app\\static\\js",
+    "\\yunex_app\\templates",
+    "\\yunex_app\\templates\\main",
+    "\\yunex_django_website"
+  ],
+  "SelectedNode": "\\yunex_app\\views.py",
+  "PreviewInSolutionExplorer": false
+}
