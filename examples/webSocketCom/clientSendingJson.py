@@ -66,6 +66,7 @@ async def sendDataToHorizontalChart(websocket, path):
 def runHorizontalChart_thread():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    #start_server = websockets.serve(sendDataToHorizontalChart, "192.168.0.121", 8000)
     start_server = websockets.serve(sendDataToHorizontalChart, "127.0.0.1", 8051)
     loop.run_until_complete(start_server)
     loop.run_forever()

@@ -44,6 +44,9 @@ from utils import write_MOT_results
 
 from boxmot.utils import EXAMPLES
 
+# detected object indexes handling
+detectedObjectIndexes = []
+
 # Websocket communication
 # Flag to signal the thread to stop
 iterateee = 0
@@ -58,20 +61,62 @@ countTrainTram = 0
 killAsyncThreadForChar = False
 stop_websocket_thread = False
 
-detectedObjects = [1]
+#detectedObjects = [1]
 
 ObjectListJson = {
           "AnalyticsId": 0,
+          "CubeId": 0,
           "EvaluationTimestamp": str(int(time.time())*1000),
           "Failure": False,
           "FailureState": "None",
+          "Id":"Brno",
+          "MessageCounter": 0,
           "Objects": [],
           "supportedClassesForCounter": ["Car", "Bus", "Truck", "Train/Tram"],
           "totalObjectsCountForCounter": [],
           "Part": 1,
+          "SinkId": 0,
           "TotalParts": 1
         }
 
+# for StatisticsData
+async def sendStatisticsData(uri):
+    tryToConnectCount = 120
+    while tryToConnectCount > 0:  
+        try:
+            async with websockets.connect(uri) as websocket:            
+                while not stop_websocket_thread:        
+
+                    ObjectListJson["totalObjectsCountForCounter"] = [countCar, countBus, countTruck, countTrainTram]
+                    print(f'{ObjectListJson["Objects"]}')
+
+                    data = {"ObjectList": ObjectListJson}
+                    json_data = json.dumps(data)
+                    await websocket.send(json_data)
+                    #print(f"Sent data to server: {json_data}")
+                    print(f"Sending data to server")
+                    tryToConnectCount = 120
+                    await asyncio.sleep(1)
+
+        except Exception as e:
+            print(f"Connection failed: {e}, retrying in 5 seconds...")
+            tryToConnectCount = tryToConnectCount - 1
+            await asyncio.sleep(30)
+
+# for StatisticsData
+def runSendingStatistics_thread():
+    # Yunex websocket url
+    server_uri = "ws://192.168.0.121:8000"
+
+    # Local testing websocket url
+    #server_uri = "ws://127.0.0.1:8000"
+    asyncio.new_event_loop().run_until_complete(sendStatisticsData(server_uri))
+
+################################################################
+################################################################
+################################################################
+
+# for HorizontalChart 
 async def sendDataToHorizontalChart(websocket, path):
     #global stop_websocket_thread
     while not stop_websocket_thread:
@@ -92,6 +137,7 @@ async def sendDataToHorizontalChart(websocket, path):
         await asyncio.sleep(1)  # Send updates every second
     exit()
 
+# for HorizontalChart
 def runHorizontalChart_thread():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -101,7 +147,9 @@ def runHorizontalChart_thread():
 
 ################################################################
 ################################################################
+################################################################
 
+# for VideoStream
 async def sendDataToVideoStreamViewer(websocket, path):
     #global stop_websocket_thread
     while not stop_websocket_thread:
@@ -126,6 +174,7 @@ async def sendDataToVideoStreamViewer(websocket, path):
         await asyncio.sleep(1) 
     exit()
 
+# for VideoStream
 def runVideoStream_thread():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -139,10 +188,10 @@ class CameraData:
         self.camera_idx = 0
         self.window_name = ""
         self.win_pos = None
-        self.H = None
-        self.K = None
-        self.D = None
-        self.P = None
+        self.H = None # Homograficka matica pouzivana v pocitacovom videni na vykonavanie transformacii obrazu, napriklad pri kalibracii kamery alebo pri mapovani obrazu na ine plochy.
+        self.K = None # Vnutorna kalibracna matica kamery. Pouziva sa na definovanie vnutornych parametrov kamery, ako su ohniskova vzdialenost a opticke stredisko.
+        self.D = None # Parameter pre distorcne koeficienty kamery, ktore sa pouzivaju na opravu deformacie obrazu sposobenej charakteristikami sosovky kamery.
+        self.P = None # Projekcna matica, ktora sa pouziva v pocitacovom videni na transformaciu 3D bodov sveta do 2D obrazoveho priestoru.
 
 class cameraParams:
     def __init__(self, H=None, K=None, D=None, P=None):
@@ -273,7 +322,7 @@ class DetectedObject:
         self.y = y
         self.width = width
         self.height = height
-        self.ttl = 28
+        self.ttl = 20
         self.objectTrajectory = []
         self.objectTrajectory.append((x, y))
         self.centerX = x + (width/2)
@@ -289,6 +338,12 @@ class DetectedObject:
 
     def draw(self, image):
             cv2.rectangle(image, (self.x, self.y), (self.x + self.width, self.y + self.height), (0, 255, 0), 2)
+
+    def getX(self):
+        return self.x
+
+    def getY(self):
+        return self.y
 
     def setRect(self, x, y, width, height):
         self.x = x
@@ -335,7 +390,7 @@ class DetectedObject:
         self.ttl = self.ttl - 1
 
     def resetTTL(self):
-        self.ttl = 28
+        self.ttl = 20
 
     def getTTL(self):
         return self.ttl
@@ -363,7 +418,8 @@ class DetectedObject:
         # Update detection gps position
         self.gpsPosition = gpsPosition
 
-        speed = (distance/timeMeasurementDiration)*3.6
+        #speed = (distance/timeMeasurementDiration)*3.6
+        speed = (distance/timeMeasurementDiration)
         self.setSpeed(speed)
 
     def getObjectTrajectory(self):
@@ -396,7 +452,8 @@ def printHelp():
 @torch.no_grad()
 def runProcessing(args):
 
-    cam_params_file_name = "cameraParams/crossroadX_cameras_params.xml"
+    #cam_params_file_name = "cameraParams/crossroadX_cameras_params.xml"
+    cam_params_file_name = "cameraParams/kolisteMHorakove_cameras_params.xml"
 
     cd_1 = CameraData()
     cd_2 = CameraData()
@@ -406,19 +463,20 @@ def runProcessing(args):
 
     # load imgs, idxs etc...
     cd_ref.camera_idx = 0
-    cd_ref.img = cv2.imread("cameraViews/crossroadX_birdView.png")
+    topDownImageFrame = "cameraViews/kolisteMHorakove_topDownView.png"
+    cd_ref.img = cv2.imread(topDownImageFrame)
     cd_ref.window_name = cam_ref_win_name
     cd_ref.win_pos = (500, 500)
     cd_vec.append(cd_ref)
 
     cd_1.camera_idx = 1
-    cd_1.img = cv2.imread("cameraViews/crossroadX_cam_01.png")
+    cd_1.img = cv2.imread("cameraViews/kolisteMHorakove_cam_ip32.png")
     cd_1.window_name = "cam_1"
     cd_1.win_pos = (0, 0)
     cd_vec.append(cd_1)
 
     cd_2.camera_idx = 2
-    cd_2.img = cv2.imread("cameraViews/crossroadX_cam_02.png")
+    cd_2.img = cv2.imread("cameraViews/kolisteMHorakove_cam_ip34.png")
     cd_2.window_name = "cam_2"
     cd_2.win_pos = (0, 0)
     cd_vec.append(cd_2)
@@ -454,15 +512,21 @@ def runProcessing(args):
     global pixelToGpsHomography
     pixelToGpsHomography, _ = cv2.findHomography(np.array(pixel_coords), np.array(gps_coords))
 
-    birdViewPath = "D:\\DNN\\\yunex_yolo_object_tracking\\examples\\cameraViews\\crossroadX_birdView.png"
+    #birdViewPath = "D:\\DNN\\\yunex_yolo_object_tracking\\examples\\cameraViews\\crossroadX_birdView.png"
+    birdViewPath = topDownImageFrame
     birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
 
     model = YOLO(args['yolo_model'] if 'v8' in str(args['yolo_model']) else 'yolov8n')
     overrides = model.overrides.copy()
     model.predictor = TASK_MAP[model.task][3](overrides=overrides, _callbacks=model.callbacks)
 
+    # init detectedObjectIndexes array
+    #initDetectedObjectIndexes()
+    detectedObjectIndexesCounter = 0
+
     # detected objects
-    allowedDetectedObjects = ["person", "car", "truck", "bus", "tram/train", "bicycle", "motorcycle"]
+    #allowedDetectedObjects = ["person", "car", "truck", "bus", "tram/train", "bicycle", "motorcycle"]
+    allowedDetectedObjects = ["car"]
     detectedObjects = []
 
     # extract task predictor
@@ -535,7 +599,7 @@ def runProcessing(args):
         tempDetectedObjectsUnsorted = []
 
         # All sorted/paired detected objects
-        tempDetectedObjectsSorted = []
+        #tempDetectedObjectsSorted = []
 
         n = len(im0s)
         predictor.results = [None] * n
@@ -698,10 +762,12 @@ def runProcessing(args):
                         #DetectedObject(id, className, x, y, width, height, detectedTime, gpsPosition)
                         
                         latitude, longitude = pixel_to_gps(point_to_ref[0], point_to_ref[1])
-                        tempDetectedObject = DetectedObject(len(detectedObjects), bbBoxName, point_to_ref[0], point_to_ref[1], 25, 25, time.perf_counter(), (latitude, longitude))
+                        tempDetectedObject = DetectedObject(-1, bbBoxName, point_to_ref[0], point_to_ref[1], 25, 25, time.perf_counter(), (latitude, longitude))
                         
-                        searchingAreaOffsetX = 55
-                        searchingAreaOffsetY = 55
+                        #searchingAreaOffsetX = 84
+                        #searchingAreaOffsetY = 48
+                        searchingAreaOffsetX = 84
+                        searchingAreaOffsetY = searchingAreaOffsetX
 
                         # Check, if it iterate over last video/stream source
                         # Prebehne vsetky iteracie, zdroj po zdroji... Az na poslednej iteracii, tam iteruje posledny zdroj a rovno paruje s predchazdajucimi
@@ -722,7 +788,7 @@ def runProcessing(args):
                                 for index, forDetectedObject in enumerate(tempDetectedObjectsUnsorted):
                                     forDetectedObjectCenterX, forDetectedObjectCenterY = forDetectedObject.getRectCenter()
                                     # Rect(x, y, width, height)
-                                    dObjectRect = Rect(forDetectedObjectCenterX-84, forDetectedObjectCenterY-48, 168, 96)
+                                    dObjectRect = Rect(forDetectedObjectCenterX-searchingAreaOffsetX, forDetectedObjectCenterY-searchingAreaOffsetY, searchingAreaOffsetX, searchingAreaOffsetY)
                                     if dObjectRect.contains(centerX, centerY):
                                         similarDetectedObjectIndexes.append(index)
 
@@ -735,6 +801,7 @@ def runProcessing(args):
                                         similarDetectedObjectPositionsCenterX.append(similarDetObCenterX)
                                         similarDetectedObjectPositionsCenterY.append(similarDetObCenterY)
                                         del tempDetectedObjectsUnsorted[index]
+                                        #removeDetectedObjectIndex(index)
 
                                     similarDetectedObjectPositionsCenterX.append(centerX)
                                     similarDetectedObjectPositionsCenterY.append(centerY)
@@ -742,7 +809,7 @@ def runProcessing(args):
                                     averageDetObPositionsCenterY = int(sum(similarDetectedObjectPositionsCenterY) / len(similarDetectedObjectPositionsCenterY))
 
                                     latitude, longitude = pixel_to_gps(averageDetObPositionsCenterX, averageDetObPositionsCenterY)
-                                    resultingDetectedObject = DetectedObject(len(detectedObjects), bbBoxName, averageDetObPositionsCenterX, averageDetObPositionsCenterY, 25, 25, time.perf_counter(), (latitude, longitude))
+                                    resultingDetectedObject = DetectedObject(-1, bbBoxName, averageDetObPositionsCenterX, averageDetObPositionsCenterY, 25, 25, time.perf_counter(), (latitude, longitude))
 
                                     # Teraz len priradenie s predchadzajucimi detekciami, to znamena aktualizacia detekovanych objektov novymi
                                     if len(detectedObjects) > 0:
@@ -753,7 +820,7 @@ def runProcessing(args):
                                         for index, forDetectedObject in enumerate(detectedObjects):
                                             forDetectedObjectCenterX, forDetectedObjectCenterY = forDetectedObject.getRectCenter()
                                             # Rect(x, y, width, height)
-                                            dObjectRect = Rect(forDetectedObjectCenterX-84, forDetectedObjectCenterY-48, 168, 96)
+                                            dObjectRect = Rect(forDetectedObjectCenterX-searchingAreaOffsetX, forDetectedObjectCenterY-searchingAreaOffsetY, searchingAreaOffsetX, searchingAreaOffsetY)
                                             resultingDetectedObjectCenterX = resultingDetectedObject.getRectCenter()[0]
                                             resultingDetectedObjectCenterY = resultingDetectedObject.getRectCenter()[1]
 
@@ -775,9 +842,13 @@ def runProcessing(args):
                                             detectedObjects[nearestDetectedObjectIndex].updateObject(bbBoxName, resultingDetectedObjectCenterX, resultingDetectedObjectCenterY, time.perf_counter(), (latitude, longitude))                               
                                             detectedObjects[nearestDetectedObjectIndex].resetTTL()
                                         else:
-                                            detectedObjects.append(resultingDetectedObject)                                          
+                                            detectedObjectIndexesCounter = detectedObjectIndexesCounter + 1
+                                            detectedObjects.append(DetectedObject(detectedObjectIndexesCounter, resultingDetectedObject.getClassName(), resultingDetectedObject.getX(), resultingDetectedObject.getY(), 25, 25, resultingDetectedObject.getDetectedTime(), resultingDetectedObject.getGpsPosition()))   
+                                            del resultingDetectedObject
                                     else:
-                                        detectedObjects.append(resultingDetectedObject)
+                                        detectedObjectIndexesCounter = detectedObjectIndexesCounter + 1
+                                        detectedObjects.append(DetectedObject(detectedObjectIndexesCounter, resultingDetectedObject.getClassName(), resultingDetectedObject.getX(), resultingDetectedObject.getY(), 25, 25, resultingDetectedObject.getDetectedTime(), resultingDetectedObject.getGpsPosition()))
+                                        del resultingDetectedObject
                                 else:
                                     # Opat len priradenie s predchadzajucimi detekciami, to znamena aktualizacia detekovanych objektov novymi
                                     if len(detectedObjects) > 0:
@@ -788,7 +859,7 @@ def runProcessing(args):
                                         for index, forDetectedObject in enumerate(detectedObjects):
                                             forDetectedObjectCenterX, forDetectedObjectCenterY = forDetectedObject.getRectCenter()
                                             # Rect(x, y, width, height)
-                                            dObjectRect = Rect(forDetectedObjectCenterX-84, forDetectedObjectCenterY-48, 168, 96)
+                                            dObjectRect = Rect(forDetectedObjectCenterX-searchingAreaOffsetX, forDetectedObjectCenterY-searchingAreaOffsetY, searchingAreaOffsetX, searchingAreaOffsetY)
                                             tempDetectedObjectCenterX = tempDetectedObject.getRectCenter()[0]
                                             tempDetectedObjectCenterY = tempDetectedObject.getRectCenter()[1]
 
@@ -810,11 +881,16 @@ def runProcessing(args):
                                             detectedObjects[nearestDetectedObjectIndex].updateObject(bbBoxName, tempDetectedObjectCenterX, tempDetectedObjectCenterY, time.perf_counter(), (latitude, longitude))                               
                                             detectedObjects[nearestDetectedObjectIndex].resetTTL()
                                         else:
-                                            detectedObjects.append(tempDetectedObject)
+                                            detectedObjectIndexesCounter = detectedObjectIndexesCounter + 1
+                                            detectedObjects.append(DetectedObject(detectedObjectIndexesCounter, tempDetectedObject.getClassName(), tempDetectedObject.getX(), tempDetectedObject.getY(), 25, 25, tempDetectedObject.getDetectedTime(), tempDetectedObject.getGpsPosition()))   
+                                            del tempDetectedObject
                                     else:
-                                        detectedObjects.append(tempDetectedObject)                                                                  
+                                        detectedObjectIndexesCounter = detectedObjectIndexesCounter + 1
+                                        detectedObjects.append(DetectedObject(detectedObjectIndexesCounter, tempDetectedObject.getClassName(), tempDetectedObject.getX(), tempDetectedObject.getY(), 25, 25, tempDetectedObject.getDetectedTime(), tempDetectedObject.getGpsPosition()))      
+                                        del tempDetectedObject
                         else:
                             tempDetectedObjectsUnsorted.append(tempDetectedObject)
+                            del tempDetectedObject
 
                                  
             # write inference results to a file or directory
@@ -889,9 +965,9 @@ def runProcessing(args):
                 #kiac
                 #Zobrazenie perspektivy kamier
                 #Zobrazenie kamier
-                #cv2.imshow(f'{p}', im0FrameForView)
-                #if cv2.waitKey(1) == ord('q'):
-                #    cv2.destroyAllWindows()
+                cv2.imshow(f'{p}', im0FrameForView)
+                if cv2.waitKey(1) == ord('q'):
+                    cv2.destroyAllWindows()
                 #    exit()
         ### ### ###kiactm.stop()
         ### ### ###kiacprint("Tracking: ", tm.getTimeMilli())
@@ -901,32 +977,42 @@ def runProcessing(args):
         ObjectListJson["Objects"] = []
         canDrawDetectedObjectToBirdView = True
         if canDrawDetectedObjectToBirdView == True:
-            birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
+            #showDetectedObjectIndexes()
+            #birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
+            #birdViewPath = topDownImageFrame
             birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
             for index, forDetectedObject in enumerate(detectedObjects):
                 
-                forDetectedObject.decreaseTTL()
-                if forDetectedObject.getTTL() <= 0:
+                detectedObjects[index].decreaseTTL()
+                if detectedObjects[index].getTTL() <= 0:
                     detectedObjects.pop(index)
+                    #removeDetectedObjectIndex(index)
                     continue           
 
                 x, y, width, height = forDetectedObject.getRect()
                 centerX, centerY = forDetectedObject.getRectCenter()
                 #objCenterPoint = (centerX, centerY + (height * 0.5))
-                #cv2.circle(birdViewFrame, (int(centerX), int(centerY)), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
-                cv2.rectangle(birdViewFrame, (int(centerX-42), int(centerY-32)), (int(centerX+42), int(centerY+32)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
-                cv2.putText(birdViewFrame, forDetectedObject.getClassName(), (int(centerX), int(centerY)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
-                cv2.putText(birdViewFrame, str(forDetectedObject.getId()), (int(centerX), int(centerY+24)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+                #kiacaccv2.circle(birdViewFrame, (int(centerX), int(centerY)), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
+                ###cv2.rectangle(birdViewFrame, (int(centerX-42), int(centerY-32)), (int(centerX+42), int(centerY+32)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
+                #kiacaccv2.rectangle(birdViewFrame, (int(centerX-int(searchingAreaOffsetX/6)), int(centerY-int(searchingAreaOffsetX/6))), (int(centerX+int(searchingAreaOffsetX/6)), int(centerY+int(searchingAreaOffsetX/6))), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
+                #kiacaccv2.putText(birdViewFrame, forDetectedObject.getClassName(), (int(centerX), int(centerY)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+                #kiacaccv2.putText(birdViewFrame, str(forDetectedObject.getId()), (int(centerX), int(centerY+24)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
 
                 #currentObjectSpeed = "{:.2f}".format(forDetectedObject.getSpeed())
                 currentObjectSpeed = forDetectedObject.getSpeed()
                 #objectSpeedValueString = "{} km/h".format(str(forDetectedObject.getSpeed()))
-                objectSpeedValueString = "NaN km/h"
+                objectSpeedValueString = "NaN"
+                objectSpeedValueStringForView = 0
+
                 if currentObjectSpeed <= 2.5:
-                    objectSpeedValueString = "{:.2f} km/h".format(0)
+                    objectSpeedValueString = "{:.2f}".format(0)
+                    objectSpeedValueStringForView = 0
                 else:
-                    objectSpeedValueString = "{:.2f} km/h".format(forDetectedObject.getSpeed())
-                cv2.putText(birdViewFrame, objectSpeedValueString, (int(centerX), int(centerY+48)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
+                    objectSpeedValueString = "{:.2f}".format(forDetectedObject.getSpeed())
+                    objectSpeedValueStringForView = forDetectedObject.getSpeed() * 3.6
+
+                objectSpeedValueStringForView = "{:.2f}".format(objectSpeedValueStringForView)
+                #kiacaccv2.putText(birdViewFrame, objectSpeedValueStringForView + " km/h", (int(centerX), int(centerY+48)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
                 
                 # Detected object counting
                 if not forDetectedObject.getId() in detectedObjectIdInCounter:
@@ -975,7 +1061,7 @@ def runProcessing(args):
                         "MapSpeedAngle": None,
                         "SensorPosition": [None, None],
                         "Timestamp": str(int(time.time())*1000),
-                        "WGS84Position": [str(forDetectedObject.getGpsPosition()[0]), str(forDetectedObject.getGpsPosition()[1])]
+                        "WGS84Position": [float(forDetectedObject.getGpsPosition()[1]), float(forDetectedObject.getGpsPosition()[0])]
                     }
                 }
                 ObjectListJson["Objects"].append(objectJson)
@@ -998,7 +1084,8 @@ def runProcessing(args):
         key = cv2.waitKey(1) & 0xFF
         # Exit the loop if 'c' is pressed (ROI selection completed)
         if key == ord('r'):
-            birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
+            #birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
+            birdViewPath = topDownImageFrame
             birdViewFrame = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
 
         # Exit the loop if 'q' or Esc is pressed (cancel ROI selection)
@@ -1103,13 +1190,14 @@ def parse_opt():
 if __name__ == "__main__":
     opt = parse_opt()
     # Create a thread for WebSocket communication
-    #websocket_thread = threading.Thread(target=startWebsocket_videoStreamCommunication, args=(server_uri,))
-    #websocket_thread.start()
     videoStream_thread = threading.Thread(target=runVideoStream_thread)
     videoStream_thread.start()
 
-    horizontalChart_thread = threading.Thread(target=runHorizontalChart_thread)
-    horizontalChart_thread.start()
+    #horizontalChart_thread = threading.Thread(target=runHorizontalChart_thread)
+    #horizontalChart_thread.start()
+
+    sendingStatistics_thread = threading.Thread(target=runSendingStatistics_thread)
+    sendingStatistics_thread.start()
 
     runProcessing(vars(opt))
     #websocket_thread.join()  # Wait for the thread to finish

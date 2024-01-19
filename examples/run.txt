@@ -6,4 +6,8 @@ https://github.com/mikel-brostrom/yolo_tracking/
 python mainObjectDetectionAndTrackingOnly.py --device 0 --source list1.streams --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt
 
 # For multi camera object detection and tracking
+# Crossroad X
 python main.py --device 0 --source yunex.streams --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt
+
+# Crossroad KolisteMHorakove
+python main.py --device 0 --source kolisteMHorakove.streams --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt
