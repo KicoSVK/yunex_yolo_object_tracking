@@ -7,7 +7,7 @@
   </p>
   <br>
   <div>
-  <a href="https://starfos.tacr.cz/projekty/CK04000027"><img src="https://old.starfos.tacr.cz/static/starfos/images/logo-tacr-starfos.svg" alt="CI CPU testing"></a>
+  <a href="https://starfos.tacr.cz/projekty/CK04000027"><img src="https://old.starfos.tacr.cz/static/starfos/images/logo-tacr-starfos.svg" height="64" alt="CI CPU testing"></a>
   <br>
   <a href="https://colab.research.google.com/drive/18nIqkBr68TkK8dHdarxTco6svHUJGggY?usp=sharing"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a>
 <a href="https://doi.org/10.5281/zenodo.8132989"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.8132989.svg" alt="DOI"></a>
