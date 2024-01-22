@@ -8,17 +8,14 @@
   <br>
   <div>
   <a href="https://starfos.tacr.cz/projekty/CK04000027"><img src="https://old.starfos.tacr.cz/static/starfos/images/logo-tacr-starfos.svg" height="64" alt="CI CPU testing"></a>
-  <br>
-  <a href="https://colab.research.google.com/drive/18nIqkBr68TkK8dHdarxTco6svHUJGggY?usp=sharing"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a>
-<a href="https://doi.org/10.5281/zenodo.8132989"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.8132989.svg" alt="DOI"></a>
 
   </div>
 </div>
 
 
-## Introduction
+## Úvod
 
-This repo contains a collections of pluggable state-of-the-art multi-object trackers for object detectors. We provide examples on how to use this package together with popular object detection models such as: [Yolov8](https://github.com/ultralytics), [Yolo-NAS](https://github.com/Deci-AI/super-gradients) and [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX).
+Tento repozitář obsahuje dosažené výsledky v rámci řešení projektu Systém řízENí Dopravy nové gEneRace (SENDER). Cílem projektu je výzkum a vývoj prototypu HW a 2x modulární SW nadstavby (nad multi-kamerovým systémem a světelným signalizačním zařízením včetně dalších senzorů) s obchodním označením Y-SENDER (Systém řízENí Dopravy nové gEneRace) a jeho pilotní ověření v reálném provozu. Systém bude využívat pokročilé prvky umělé inteligence na bázi hloubkových neuronových sítí a dalších pokročilých algoritmů, které v reálném čase umožní sofistikované monitorování a řízení dopravy městských dopravních uzlů včetně inteligentních funkcí pro zvýšení efektivity i bezpečnosti dopravy, zlevní instalační náklady pro nasazení systému, včetně moderních funkcí inteligentní dopravy pro upozornění řidičů na blížící se nebezpečí.
 
 <details>
 <summary>Supported tracking methods</summary>
