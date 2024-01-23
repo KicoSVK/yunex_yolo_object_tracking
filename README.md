@@ -84,27 +84,3 @@ $ python examples/track.py --yolo-model yolov8n       # bboxes only
                                         yolov8n-seg   # bboxes + segmentation masks
                                         yolov8n-pose  # bboxes + pose estimation
 ```
-
-
-<details>
-<summary>Tracking sources</summary>
-
-Tracking can be run on most video formats
-
-```bash
-$ python examples/track.py --source 0                               # webcam
-                                    img.jpg                         # image
-                                    vid.mp4                         # video
-                                    path/                           # directory
-                                    path/*.jpg                      # glob
-                                    'https://youtu.be/Zgi9g1ksQHc'  # YouTube
-                                    'rtsp://example.com/media.mp4'  # RTSP, RTMP, HTTP stream
-```
-
-</details>
-
-
-## Contact
-
-For Yolov8 tracking bugs and feature requests please visit [GitHub Issues](https://github.com/mikel-brostrom/Yolov5_StrongSORT_OSNet/issues).
-For business inquiries or professional support requests please send an email to: yolov5.deepsort.pytorch@gmail.com
