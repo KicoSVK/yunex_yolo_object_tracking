@@ -63,7 +63,6 @@ cd yunex_yolo_object_tracking
 
 Následně pro instalaci potřebných závislostí spusťte příkaz:
 ```
-git clone https://github.com/mikel-brostrom/yolo_tracking.git
 pip install -v -e .
 ```
 
@@ -78,9 +77,5 @@ pip install boxmot
 
 
 ```bash
-$ python examples/track.py --yolo-model yolov8n       # bboxes only
-  python examples/track.py --yolo-model yolo_nas_s    # bboxes only
-  python examples/track.py --yolo-model yolox_n       # bboxes only
-                                        yolov8n-seg   # bboxes + segmentation masks
-                                        yolov8n-pose  # bboxes + pose estimation
+$ python main.py --device 0 --source yunex.streams --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt
 ```
