@@ -39,7 +39,7 @@ async def sendDataToHorizontalChart(websocket, path):
     #global stop_websocket_thread
     while not stop_websocket_thread:
         global countCar
-        countCar = countCar + random.randint(0, 4)
+        countCar = countCar + random.randint(0, 1)
         global countBus
         countBus = countBus + random.randint(0, 1)
         global countTruck
@@ -73,6 +73,9 @@ def runHorizontalChart_thread():
     
 
 if __name__ == "__main__":
+
+    cv2.waitKey(120000)
+
     horizontalChart_thread = threading.Thread(target=runHorizontalChart_thread)
     horizontalChart_thread.start()
     
