@@ -67,8 +67,8 @@ perspectiveView = None
 topDownView = None
 cameraMatrix = None
 distCoeffs = None
-gps_coords = []
-pixel_coords = []
+topDownView_gpsCoords = []
+topDownView_pixelCoords = []
 
 ObjectListJson = {
           "AnalyticsId": 0,
@@ -279,24 +279,26 @@ def haversine(lat1, lon1, lat2, lon2):
     return distance
 
 # Define the four pairs of corresponding points
-gps_coords = np.array([
-    (49.22151, 16.58512),
-    (49.22158, 16.58515),
-    (49.22162, 16.58531),
-    (49.22159, 16.58535),
-    (49.22149, 16.58549),
-    (49.22140, 16.58545),
-    (49.22136, 16.58530)
+topDownView_gpsCoords = np.array([
+    (49.199508183923264, 16.610348530150656),
+    (49.199607236220956, 16.610568334271644),
+    (49.199775129412444, 16.610525889337936),
+    (49.19971866981873, 16.61031972823135),
+    (49.199776615190366, 16.61010750356281),
+    (49.1997577953335, 16.6098755723179),
+    (49.19965824807687, 16.60970427669258),
+    (49.19958247316514, 16.6099922958856)
 ])
 
-pixel_coords = np.array([
-    (708, 395),
-    (726, 374),
-    (1151, 374),
-    (1172, 395),
-    (1250, 683),
-    (1131, 795),
-    (726, 795)
+topDownView_pixelCoords = np.array([
+    (1172, 840),
+    (1500, 621),
+    (1436, 238),
+    (1131, 368),
+    (812, 237),
+    (464, 280),
+    (210, 502),
+    (640, 676)
 ])
 
 pixelToGpsHomography = None
@@ -427,14 +429,6 @@ class DetectedObject:
         self.speed = speed
 
     def getSpeed(self):
-        #self.speed = random.uniform(25.1, 29.9)
-        #return (self.speed/10)/4
-        #return 0
-        #r = random.randint(27, 31)
-        #if r == 31:
-        #    return -1
-        #else:
-        #    return r
         return self.speed
 
     def decreaseTTL(self):
@@ -563,10 +557,10 @@ def runProcessing(args):
         cd_vec[j].P = P_vec[j]
 
     # Calculate the homography matrix
-    global pixel_coords
-    global gps_coords 
+    global topDownView_pixelCoords
+    global topDownView_gpsCoords 
     global pixelToGpsHomography
-    pixelToGpsHomography, _ = cv2.findHomography(np.array(pixel_coords), np.array(gps_coords))
+    pixelToGpsHomography, _ = cv2.findHomography(np.array(topDownView_pixelCoords), np.array(topDownView_gpsCoords))
 
     #birdViewPath = "D:\\DNN\\\yunex_yolo_object_tracking\\examples\\cameraViews\\crossroadX_birdView.png"
     birdViewPath = topDownImageFrame
@@ -749,40 +743,13 @@ def runProcessing(args):
                         # Ending coordinate, here (220, 220)
                         # represents the bottom right corner of rectangle
                         bboxEndPoint = (int(b[2]), int(b[3]))
-  
-                        # Blue color in BGR
-                        color = (255, 0, 0)
-  
-                        # Line thickness of 2 px
-                        thickness = 2
-  
-                        # Using cv2.rectangle() method
-                        # Draw a rectangle with blue line borders of thickness of 2 px
-                        im0 = cv2.rectangle(im0, bboxStartPoint, bboxEndPoint, color, thickness)
 
-                        # font
-                        font = cv2.FONT_HERSHEY_SIMPLEX
-  
-                        # org
-                        org = bboxStartPoint
-  
-                        # fontScale
-                        fontScale = 1
-   
-                        # Blue color in BGR
-                        color = (0, 0, 255)
-  
-                        # Line thickness of 2 px
-                        thickness = 2
-   
-                        # Using cv2.putText() method
-                        im0 = cv2.putText(im0, bbBoxName, org, font, fontScale, color, thickness, cv2.LINE_AA)
-
-                        org = bboxEndPoint
-                        color = (255, 255, 255)
+                        im0 = cv2.rectangle(im0, bboxStartPoint, bboxEndPoint, (255, 0, 0), 2)
+                      
+                        im0 = cv2.putText(im0, bbBoxName, bboxStartPoint, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
 
                         if box.id is not None:
-                            im0 = cv2.putText(im0, str(int(box.id[0])), org, font, fontScale, color, thickness, cv2.LINE_AA)
+                            im0 = cv2.putText(im0, str(int(box.id[0])), bboxEndPoint, cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
                         # b[0] -> x1
                         # b[1] -> y1
@@ -790,14 +757,13 @@ def runProcessing(args):
                         # b[3] -> y2
                         bboxCenterPointX = int(b[0]) + int((int(b[2]) - int(b[0]))/2)
                         bboxCenterPointY = int(b[1]) + int((int(b[3]) - int(b[1]))/2)
+
                         # Set perspective offset in y direction
                         bboxCenterPointY = bboxCenterPointY + int((int(b[3]) - int(b[1])) / 3)
-
-                        
+                
                         bboxWidth = int(b[2]) - int(b[0])
                         bboxHeight = int(b[3]) - int(b[1])
-
-                        
+                   
                         # Draw center of detected object to camera perspective
                         cv2.circle(im0, (bboxCenterPointX, bboxCenterPointY), 2, (0, 0, 255), 2)
 
@@ -824,14 +790,6 @@ def runProcessing(args):
                         #elif (i==3):
                         #    cv2.circle(birdViewFrame, point_to_ref, 2, (255, 255, 0), 2)
 
-                        # Current detected object
-                        #DetectedObject(id, className, x, y, width, height, detectedTime, gpsPosition)
-
-
-                        #searchingAreaOffsetY = searchingAreaOffsetX
-
-                        #cv2.rectangle(birdViewFrame, (int(point_to_ref[0]-searchingAreaOffsetY), int(point_to_ref[1]-searchingAreaOffsetY)), (int(point_to_ref[0]+searchingAreaOffsetY), int(point_to_ref[1]+searchingAreaOffsetY)), (255,0,0), 4)
-                        
                         latitude, longitude = pixel_to_gps(point_to_ref[0], point_to_ref[1])
                         tempDetectedObject = DetectedObject(-1, bbBoxName, point_to_ref[0], point_to_ref[1], 25, 25, time.perf_counter(), (latitude, longitude))                       
 
@@ -982,11 +940,8 @@ def runProcessing(args):
                 #print(model.names[int(predictor.results[i].boxes.cls)])
                 ###print(predictor.results[i].boxes.cls)
                 #print(predictor.results[i].names[0])
-
-                #model.names[int(c)]
-                
+                #model.names[int(c)]          
                 #print(predictor.results[i].probs)
-                #print("########################################################")
                 #cv2.imshow("im0", im0)
 
                 # write MOT specific results
@@ -1029,26 +984,15 @@ def runProcessing(args):
             isShowImageWithDNNOutputs = True
             if isShowImageWithDNNOutputs == True:
                 im0FrameForView = cv2.resize(im0, (int(im0.shape[1]/2), int(im0.shape[0]/2)), interpolation = cv2.INTER_AREA)
-                #kiac
                 #cv2.imshow("Birdvieweee", birdViewFrame)
                 #Zobrazenie perspektivy kamier
-                #Zobrazenie kamier
                 cv2.imshow(f'{p}', im0FrameForView)
                 if cv2.waitKey(1) == ord('q'):
                     cv2.destroyAllWindows()
 
-                #    exit()
-        ### ### ###kiactm.stop()
-        ### ### ###kiacprint("Tracking: ", tm.getTimeMilli())
-        ### ### ###kiactm.reset()
-
-        ###########################################################
         ObjectListJson["Objects"] = []
         canDrawDetectedObjectToBirdView = True
         if canDrawDetectedObjectToBirdView == True:
-            #showDetectedObjectIndexes()
-            #birdViewPath = "D:\\DNN\\yunex_traffic_dnn_py\\cameraViews\\crossroadX_birdView.png"
-            #birdViewPath = topDownImageFrame
             birdViewFrameTesting = cv2.imread(birdViewPath, cv2.IMREAD_COLOR)
             for index, forDetectedObject in enumerate(detectedObjects):
                 
@@ -1059,18 +1003,16 @@ def runProcessing(args):
                     continue           
 
                 x, y, width, height = forDetectedObject.getRect()
+                detectedObjectRectSizeForView = 84
 
                 centerX, centerY = forDetectedObject.getRectCenter()
                 #objCenterPoint = (centerX, centerY + (height * 0.5))
                 cv2.circle(birdViewFrameTesting, (int(centerX), int(centerY)), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
-                ###cv2.rectangle(birdViewFrameTesting, (int(centerX-42), int(centerY-32)), (int(centerX+42), int(centerY+32)), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
-                cv2.rectangle(birdViewFrameTesting, (int(centerX-int(searchingAreaOffsetX/4)), int(centerY-int(searchingAreaOffsetX/4))), (int(centerX+int(searchingAreaOffsetX/4)), int(centerY+int(searchingAreaOffsetX/4))), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
+                cv2.rectangle(birdViewFrameTesting, (int(centerX-int(detectedObjectRectSizeForView/4)), int(centerY-int(detectedObjectRectSizeForView/4))), (int(centerX+int(detectedObjectRectSizeForView/4)), int(centerY+int(detectedObjectRectSizeForView/4))), (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 4)            
                 cv2.putText(birdViewFrameTesting, forDetectedObject.getClassName(), (int(centerX), int(centerY)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
                 cv2.putText(birdViewFrameTesting, str(forDetectedObject.getId()), (int(centerX), int(centerY+24)), cv2.FONT_HERSHEY_SIMPLEX, 1, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2, cv2.LINE_AA)
 
-                #currentObjectSpeed = "{:.2f}".format(forDetectedObject.getSpeed())
                 currentObjectSpeed = forDetectedObject.getSpeed()
-                #objectSpeedValueString = "{} km/h".format(str(forDetectedObject.getSpeed()))
                 objectSpeedValueString = "NaN"
                 objectSpeedValueStringForView = 0
 
@@ -1110,9 +1052,6 @@ def runProcessing(args):
                     #pointInReferenceFrame = computePointInReferenceFrame(objPoint[0], objPoint[1], cd_vec[1])
                     cv2.circle(birdViewFrameTesting, (int(objPoint[0]), int(objPoint[1])), 2, (forDetectedObject.blue, forDetectedObject.green, forDetectedObject.red), 2)
 
-                ###########################################################
-                ######################TESTTTTTT############################
-                ###########################################################
                 now = datetime.now()
                 current_time = now.strftime("%H:%M:%S")
                 #print(current_time)
@@ -1136,17 +1075,8 @@ def runProcessing(args):
                 }
                 ObjectListJson["Objects"].append(objectJson)
 
-                ###########################################################
-                ######################TESTTTTTT############################
-                ###########################################################
-
             birdViewFrameTesting = cv2.resize(birdViewFrameTesting, (int(birdViewFrameTesting.shape[1]/2), int(birdViewFrameTesting.shape[0]/2)), interpolation = cv2.INTER_AREA)
             cv2.imshow("TopDownView", birdViewFrameTesting)
-
-            #global globalFrame
-            #globalFrame = birdViewFrame
-        #detectedObjects = []
-        ###########################################################
 
         kiactm.stop()
         #print("Inference: ", kiactm.getTimeMilli())
@@ -1182,7 +1112,6 @@ def runProcessing(args):
 
         #kiac#print("Current FPS: {:.2f}".format(1/(timer()-start)))
         #kiac#print("Average FPS: {:.2f}".format(1/((numpy.sum(timePerFrameArray, dtype = numpy.float32))/len(timePerFrameArray))))
-        #kiac#print("########################################################")
 
         #cv2.putText(im0, "Current FPS: {:.2f}".format(1/(timer()-start)), (12, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (225, 225, 225), 1, cv2.LINE_AA)
         #cv2.putText(im0, "Average FPS: {:.2f}".format(1/((numpy.sum(timePerFrameArray, dtype = numpy.float32))/len(timePerFrameArray))), (12, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (225, 225, 225), 1, cv2.LINE_AA)
@@ -1297,8 +1226,8 @@ def loadHomographyMatricsFromJson(config_file_path_name_to_load):
         homographyMatrix.append(mat)
 
 def loadGpsCoordinatesRelationFromJson(json_file_path):
-    gps_coords_temp = []
-    pixel_coords_temp = []
+    topDownView_gpsCoords_temp = []
+    topDownView_pixelCoords_temp = []
 
     # Open and parse the JSON file
     with open(json_file_path, 'r') as file:
@@ -1310,26 +1239,28 @@ def loadGpsCoordinatesRelationFromJson(json_file_path):
         lat, long = entry["lat"], entry["long"]
 
         # Append (x, y) to gps_coords and (lat, long) to pixel_coords
-        gps_coords_temp.append((x, y))
-        pixel_coords_temp.append((float(lat), float(long)))
+        topDownView_gpsCoords_temp.append((x, y))
+        topDownView_pixelCoords_temp.append((float(lat), float(long)))
 
     # Convert to NumPy arrays
-    gps_coords = np.array(gps_coords_temp)
-    pixel_coords = np.array(pixel_coords_temp)
+    topDownView_gpsCoords = np.array(topDownView_gpsCoords_temp)
+    topDownView_pixelCoords = np.array(topDownView_pixelCoords_temp)
 
+# Example of run
+# python main.py --device 0 --source kolisteMHorakove.streams --yolo-model yolov8m.pt --img 640 --tracking-method bytetrack --reid-model mobilenetv2_x1_0_market1501.pt
 if __name__ == "__main__":
     opt = parse_opt()
 
     loadCalibrationParametersFromXML("cameraIntrinsicParameters_dulov.xml")
     loadHomographyMatricsFromJson("homographyConfig_dulov.json")
 
-    loadGpsCoordinatesRelationFromJson("homographyConfig_UE5.json")
+    loadGpsCoordinatesRelationFromJson("homographyConfig_dulov.json")
 
     #print(cameraMatrix)
     #print(homographyMatrix[0])
     #print(homographyMatrix[1])
-    #print(gps_coords)
-    #print(pixel_coords)
+    #print(topDownView_gpsCoords)
+    #print(topDownView_pixelCoords)
 
     # Create a thread for WebSocket communication
     ########videoStream_thread = threading.Thread(target=runVideoStream_thread)
