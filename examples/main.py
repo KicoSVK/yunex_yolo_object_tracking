@@ -1251,10 +1251,10 @@ def loadGpsCoordinatesRelationFromJson(json_file_path):
 if __name__ == "__main__":
     opt = parse_opt()
 
-    loadCalibrationParametersFromXML("cameraIntrinsicParameters_dulov.xml")
-    loadHomographyMatricsFromJson("homographyConfig_dulov.json")
+    loadCalibrationParametersFromXML("cameraIntrinsicParameters_brno.xml")
+    loadHomographyMatricsFromJson("appConfig_brno.json")
 
-    loadGpsCoordinatesRelationFromJson("homographyConfig_dulov.json")
+    loadGpsCoordinatesRelationFromJson("appConfig_brno.json")
 
     #print(cameraMatrix)
     #print(homographyMatrix[0])
